@@ -154,9 +154,9 @@ const Mock = (() => {
   const g10 = (a, b) => Math.round(r(a, b) / 10) * 10;
 
   const today = localToday();
-  const db = { targets: { calorie_target: 1900, protein_target: 160, weight_target: null }, days: {} };
+  const db = { targets: { calorie_target: 1900, protein_target: 160, weight_target: null, fat_target: 70, carbs_target: null }, days: {} };
   const mset = { timezone: "Europe/Paris", day_starts_at_hour: 4, health: { connected: true, last_upload_at: today + "T19:53:00Z" } };
-  const settingsOut = () => ({ timezone: mset.timezone, day_starts_at_hour: mset.day_starts_at_hour, calorie_target: db.targets.calorie_target, protein_target: db.targets.protein_target, weight_target: db.targets.weight_target, health: { ...mset.health } });
+  const settingsOut = () => ({ timezone: mset.timezone, day_starts_at_hour: mset.day_starts_at_hour, calorie_target: db.targets.calorie_target, protein_target: db.targets.protein_target, weight_target: db.targets.weight_target, fat_target: db.targets.fat_target, carbs_target: db.targets.carbs_target, health: { ...mset.health } });
   function setSettings(p) {
     const bad = (msg) => { throw new ApiError(msg); };
     const num = (v) => typeof v === "number" && Number.isFinite(v);
@@ -164,10 +164,13 @@ const Mock = (() => {
     if ("day_starts_at_hour" in p && !(Number.isInteger(p.day_starts_at_hour) && p.day_starts_at_hour >= 0 && p.day_starts_at_hour <= 12)) bad("Начало дня: от 0 до 12 часов");
     if ("calorie_target" in p && p.calorie_target !== null && !(num(p.calorie_target) && p.calorie_target >= 800 && p.calorie_target <= 6000)) bad("Калории: от 800 до 6000");
     if ("protein_target" in p && p.protein_target !== null && !(num(p.protein_target) && p.protein_target >= 20 && p.protein_target <= 400)) bad("Белок: от 20 до 400 г");
+    for (const k of ["fat_target", "carbs_target"]) if (p[k] === "") p[k] = null;
+    if ("fat_target" in p && p.fat_target !== null && !(num(p.fat_target) && p.fat_target >= 10 && p.fat_target <= 400)) bad("Жиры: от 10 до 400 г");
+    if ("carbs_target" in p && p.carbs_target !== null && !(num(p.carbs_target) && p.carbs_target >= 20 && p.carbs_target <= 800)) bad("Углеводы: от 20 до 800 г");
     if ("weight_target" in p && p.weight_target !== null && !(num(p.weight_target) && p.weight_target >= 30 && p.weight_target <= 300)) bad("Целевой вес: от 30 до 300 кг");
     if ("timezone" in p) mset.timezone = p.timezone;
     if ("day_starts_at_hour" in p) mset.day_starts_at_hour = p.day_starts_at_hour;
-    for (const k of ["calorie_target", "protein_target"]) if (k in p) db.targets[k] = p[k] == null ? null : Math.round(p[k]);
+    for (const k of ["calorie_target", "protein_target", "fat_target", "carbs_target"]) if (k in p) db.targets[k] = p[k] == null ? null : Math.round(p[k]);
     if ("weight_target" in p) db.targets.weight_target = p.weight_target == null ? null : Math.round(p.weight_target * 10) / 10;
     return settingsOut();
   }
@@ -534,8 +537,8 @@ function renderToday() {
         <div class="v num">${fmt(tot.protein)}<small>${t.protein_target ? ` / <button class="target-btn" data-action="targets">${fmt(t.protein_target)}</button>` : ""} г</small></div>
         ${ruler(tot.protein, t.protein_target, { thin: true, cls: "protein", tickStep: 1e9 })}
       </div>
-      <div class="macro"><div class="k">Жиры</div><div class="v num">${fmt(tot.fat)}<small> г</small></div></div>
-      <div class="macro"><div class="k">Углеводы</div><div class="v num">${fmt(tot.carbs)}<small> г</small></div></div>
+      ${minorMacro("Жиры", tot.fat, t.fat_target)}
+      ${minorMacro("Углеводы", tot.carbs, t.carbs_target)}
     </div>
   </div>`;
 
@@ -625,6 +628,10 @@ function renderToday() {
       ${hero}${balance}${mealsHtml}${actsHtml}${empty}${foot}
     </div>`;
   state.animate = false;
+}
+
+function minorMacro(label, value, target) {
+  return `<div class="macro"><div class="k">${label}</div><div class="v num">${fmt(value)}<small>${target ? ` / ${fmt(target)}` : ""} г</small></div>${target ? ruler(value || 0, target, { thin: true, cls: "minor", tickStep: 1e9 }) : ""}</div>`;
 }
 
 function itemRow(it) {
@@ -1204,6 +1211,8 @@ const TZ = [
 const FIELDS = {
   calorie_target: { label: "Калории", unit: "ккал/день", hint: "от 800 до 6000", min: 800, max: 6000, dec: 0, clearable: false },
   protein_target: { label: "Белок", unit: "г/день", hint: "от 20 до 400 г", min: 20, max: 400, dec: 0, clearable: false },
+  fat_target: { label: "Жиры", unit: "г/день", hint: "Необязательно", min: 10, max: 400, dec: 0, clearable: true },
+  carbs_target: { label: "Углеводы", unit: "г/день", hint: "Необязательно", min: 20, max: 800, dec: 0, clearable: true },
   weight_target: { label: "Целевой вес", unit: "кг", hint: "необязательно, пусто = без цели", min: 30, max: 300, dec: 1, clearable: true },
 };
 
@@ -1306,7 +1315,7 @@ function renderSettings() {
 
   elSettings.innerHTML = head + `
     <div class="group-h">Цели</div>
-    <div class="card list">${fieldRow("calorie_target")}${fieldRow("protein_target")}${fieldRow("weight_target")}</div>
+    <div class="card list">${fieldRow("calorie_target")}${fieldRow("protein_target")}${fieldRow("fat_target")}${fieldRow("carbs_target")}${fieldRow("weight_target")}</div>
 
     <div class="group-h">Конец суток</div>
     <div class="card list">

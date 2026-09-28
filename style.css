@@ -421,3 +421,5 @@ body.sub { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .linkrow.muted { color: var(--hint); font-weight: 500; font-size: 14px; }
 .health i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--hint); margin-right: 8px; vertical-align: 2px; }
 .health i.on { background: var(--active); box-shadow: 0 0 0 3px color-mix(in srgb, var(--active) 22%, transparent); }
+.ruler.minor .fill { background: color-mix(in srgb, var(--text) 55%, transparent); }
+.ruler.minor .fill.overpart { background: var(--over); }
