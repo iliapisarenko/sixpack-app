@@ -423,3 +423,10 @@ body.sub { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
 .health i.on { background: var(--active); box-shadow: 0 0 0 3px color-mix(in srgb, var(--active) 22%, transparent); }
 .ruler.minor .fill { background: color-mix(in srgb, var(--text) 55%, transparent); }
 .ruler.minor .fill.overpart { background: var(--over); }
+.tile.wide { grid-column: span 2; }
+button.tile { text-align: left; width: 100%; font: inherit; color: inherit; }
+button.tile:active { transform: scale(.99); }
+.gsub { font-size: 14px; font-weight: 600; color: var(--hint); margin-top: 4px; }
+.gsub.bad { color: var(--over); }
+.gsub.good { color: var(--active); }
+.gsub.link { color: var(--accent); }

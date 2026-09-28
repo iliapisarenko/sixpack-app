@@ -154,7 +154,7 @@ const Mock = (() => {
   const g10 = (a, b) => Math.round(r(a, b) / 10) * 10;
 
   const today = localToday();
-  const db = { targets: { calorie_target: 1900, protein_target: 160, weight_target: null, fat_target: 70, carbs_target: null }, days: {} };
+  const db = { targets: { calorie_target: 1900, protein_target: 160, weight_target: 78.0, fat_target: 70, carbs_target: null }, days: {} };
   const mset = { timezone: "Europe/Paris", day_starts_at_hour: 4, health: { connected: true, last_upload_at: today + "T19:53:00Z" } };
   const settingsOut = () => ({ timezone: mset.timezone, day_starts_at_hour: mset.day_starts_at_hour, calorie_target: db.targets.calorie_target, protein_target: db.targets.protein_target, weight_target: db.targets.weight_target, fat_target: db.targets.fat_target, carbs_target: db.targets.carbs_target, health: { ...mset.health } });
   function setSettings(p) {
@@ -295,9 +295,27 @@ const Mock = (() => {
           change7: a7 != null && a7ago != null ? Math.round((a7 - a7ago) * 10) / 10 : null,
           change30,
           per_week: change30 != null ? Math.round((change30 / (29 / 7)) * 100) / 100 : null,
+          ...goalStats(a7 != null ? a7 : latest ? latest.kg : null, change30 != null ? change30 / (29 / 7) : null),
         },
       },
     };
+  }
+
+  function goalStats(current, perWeek) {
+    let target = db.targets.weight_target;
+    const force = params.get("goal"); // mock-only: none | away | flat | reached
+    if (force === "none") target = null;
+    const empty = { target, to_goal: null, eta_weeks: null, eta_date: null, direction: null };
+    if (target == null || current == null) return empty;
+    if (force === "away") perWeek = Math.abs(perWeek || 0.3);
+    if (force === "flat") perWeek = 0;
+    if (force === "reached") current = target;
+    const to_goal = Math.round((target - current) * 10) / 10;
+    if (Math.abs(to_goal) < 0.2) return { ...empty, to_goal, direction: "reached" };
+    if (perWeek == null || Math.abs(perWeek) < 0.05) return { ...empty, to_goal, direction: "flat" };
+    if (Math.sign(perWeek) !== Math.sign(to_goal)) return { ...empty, to_goal, direction: "away" };
+    const eta_weeks = Math.ceil(Math.abs(to_goal / perWeek));
+    return { target, to_goal, eta_weeks, eta_date: addDays(today, eta_weeks * 7), direction: "toward" };
   }
 
   function log(text, date) {
@@ -706,7 +724,9 @@ function weightChart(hist) {
   const slot = iw / n;
   const pts = ws.filter((w) => w && w.kg != null && idx.has(w.date));
   if (!pts.length) return { svg: `<div class="empty" style="padding:24px 0">Взвешиваний пока нет. Напиши вес внизу, например «82.4».</div>`, pts, slot };
+  const goal = hist.stats && hist.stats.weight && hist.stats.weight.target != null ? hist.stats.weight.target : null;
   const vals = []; pts.forEach((w) => { vals.push(w.kg); if (w.avg7 != null) vals.push(w.avg7); });
+  if (goal != null) vals.push(goal);
   let lo = Math.min(...vals), hi = Math.max(...vals);
   const pad = Math.max(0.3, (hi - lo) * 0.15);
   lo = Math.floor((lo - pad) * 2) / 2; hi = Math.ceil((hi + pad) * 2) / 2;
@@ -715,7 +735,8 @@ function weightChart(hist) {
   let s = `<svg class="chart" id="weightChart" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Вес за 30 дней">
   <defs><linearGradient id="wgrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".16"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>`;
   const range = hi - lo, st = range > 4 ? 1 : 0.5;
-  for (let v = lo + st; v < hi; v += st) s += `<line class="grid" x1="0" x2="${iw}" y1="${y(v)}" y2="${y(v)}"/><text x="${W - 2}" y="${y(v) + 3.5}" text-anchor="end">${fmt(v, 1)}</text>`;
+  for (let v = lo + st; v < hi; v += st) s += `<line class="grid" x1="0" x2="${iw}" y1="${y(v)}" y2="${y(v)}"/>` + (goal != null && Math.abs(y(v) - y(goal)) < 12 ? "" : `<text x="${W - 2}" y="${y(v) + 3.5}" text-anchor="end">${fmt(v, 1)}</text>`);
+  if (goal != null) s += `<line class="target" x1="0" x2="${W - 46}" y1="${y(goal)}" y2="${y(goal)}"/><text x="${W - 2}" y="${y(goal) + 3.5}" text-anchor="end" style="fill:var(--text);font-weight:600">цель ${fmt(goal, goal % 1 ? 1 : 0)}</text>`;
   const avgPts = pts.filter((w) => w.avg7 != null);
   if (avgPts.length > 1) {
     const line = avgPts.map((w, i) => `${i ? "L" : "M"}${x(w.date).toFixed(1)},${y(w.avg7).toFixed(1)}`).join("");
@@ -745,6 +766,21 @@ function weightReadout(hist, w) {
     return `<div class="d">${l ? "последнее, " + shortDate(l.date) : "нет данных"}</div><div class="v num">${l ? fmt(l.kg, 1) : "–"} <small>кг${st.avg7 != null ? ` · среднее 7 дн ${fmt(st.avg7, 1)}` : ""}</small></div>`;
   }
   return `<div class="d">${shortDate(w.date)}</div><div class="v num">${fmt(w.kg, 1)} <small>кг${w.avg7 != null ? ` · среднее ${fmt(w.avg7, 1)}` : ""}</small></div>`;
+}
+
+function goalTile(ws) {
+  if (ws.target == null) {
+    return `<button class="tile wide goal" data-action="settings"><div class="k">До цели</div><div class="v"><small>Цель не задана</small></div><div class="gsub link">Задать в настройках</div></button>`;
+  }
+  const dir = ws.direction;
+  let sub = "", cls = "";
+  if (dir === "toward") sub = [ws.eta_weeks != null ? `~${fmt(ws.eta_weeks)} нед` : "", ws.eta_date ? `к ${shortDate(ws.eta_date)}` : ""].filter(Boolean).join(" · ") || "идёшь к цели";
+  else if (dir === "away") { sub = "вес идёт от цели"; cls = "bad"; }
+  else if (dir === "flat") sub = "тренда пока нет";
+  else if (dir === "reached") { sub = "цель достигнута"; cls = "good"; }
+  const big = dir === "reached" ? fmt(ws.target, ws.target % 1 ? 1 : 0) : fmtSigned(ws.to_goal, 1);
+  return `<div class="tile wide goal"><div class="k">До цели <span class="hint">· цель ${fmt(ws.target, ws.target % 1 ? 1 : 0)} кг</span></div>
+    <div class="v num">${big} <small>кг</small></div>${sub ? `<div class="gsub ${cls}">${sub}</div>` : ""}</div>`;
 }
 
 function tile(k, v, unit = "", cls = "") { return `<div class="tile"><div class="k">${k}</div><div class="v num ${cls}">${v}${unit ? ` <small>${unit}</small>` : ""}</div></div>`; }
@@ -781,9 +817,10 @@ function renderTrends() {
     <div class="card-title"><span>Вес</span></div>
     <div class="readout" id="wRead">${weightReadout(h, null)}</div>
     ${wc.svg}
-    ${wc.pts.length ? '<div class="lg"><span><i class="sw dot"></i>взвешивание</span><span><i class="sw avg"></i>среднее за 7 дней</span></div>' : ""}
+    ${wc.pts.length ? '<div class="lg"><span><i class="sw dot"></i>взвешивание</span><span><i class="sw avg"></i>среднее за 7 дней</span>' + (ws.target != null ? '<span><i class="sw tgt"></i>цель</span>' : "") + '</div>' : ""}
   </div>
   <div class="tiles rise" style="animation-delay:140ms">
+    ${goalTile(ws)}
     ${tile("Последний", ws.latest ? fmt(ws.latest.kg, 1) : "–", "кг")}
     ${tile("За 7 дней", fmtSigned(ws.change7, 1), "кг", trendCls(ws.change7))}
     ${tile("За 30 дней", fmtSigned(ws.change30, 1), "кг", trendCls(ws.change30))}
