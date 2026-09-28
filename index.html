@@ -19,6 +19,9 @@
       <button role="tab" data-action="tab" data-tab="today" aria-selected="true">Сегодня</button>
       <button role="tab" data-action="tab" data-tab="trends" aria-selected="false">Тренды</button>
     </div>
+    <button class="icon-btn" id="setBtn" data-action="settings" aria-label="Настройки" title="Настройки">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
     <button class="icon-btn" id="undoBtn" data-action="undo" aria-label="Отменить последнее действие" title="Отменить">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
     </button>
@@ -27,6 +30,7 @@
   <main>
     <section class="view" id="today"></section>
     <section class="view" id="trends" hidden></section>
+    <section class="view" id="settings" hidden></section>
   </main>
 
   <div class="quick">

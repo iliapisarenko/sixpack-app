@@ -155,6 +155,22 @@ const Mock = (() => {
 
   const today = localToday();
   const db = { targets: { calorie_target: 1900, protein_target: 160, weight_target: null }, days: {} };
+  const mset = { timezone: "Europe/Paris", day_starts_at_hour: 4, health: { connected: true, last_upload_at: today + "T19:53:00Z" } };
+  const settingsOut = () => ({ timezone: mset.timezone, day_starts_at_hour: mset.day_starts_at_hour, calorie_target: db.targets.calorie_target, protein_target: db.targets.protein_target, weight_target: db.targets.weight_target, health: { ...mset.health } });
+  function setSettings(p) {
+    const bad = (msg) => { throw new ApiError(msg); };
+    const num = (v) => typeof v === "number" && Number.isFinite(v);
+    if ("timezone" in p) { try { new Intl.DateTimeFormat("en", { timeZone: p.timezone }); } catch (_) { bad("Неизвестный часовой пояс"); } }
+    if ("day_starts_at_hour" in p && !(Number.isInteger(p.day_starts_at_hour) && p.day_starts_at_hour >= 0 && p.day_starts_at_hour <= 12)) bad("Начало дня: от 0 до 12 часов");
+    if ("calorie_target" in p && p.calorie_target !== null && !(num(p.calorie_target) && p.calorie_target >= 800 && p.calorie_target <= 6000)) bad("Калории: от 800 до 6000");
+    if ("protein_target" in p && p.protein_target !== null && !(num(p.protein_target) && p.protein_target >= 20 && p.protein_target <= 400)) bad("Белок: от 20 до 400 г");
+    if ("weight_target" in p && p.weight_target !== null && !(num(p.weight_target) && p.weight_target >= 30 && p.weight_target <= 300)) bad("Целевой вес: от 30 до 300 кг");
+    if ("timezone" in p) mset.timezone = p.timezone;
+    if ("day_starts_at_hour" in p) mset.day_starts_at_hour = p.day_starts_at_hour;
+    for (const k of ["calorie_target", "protein_target"]) if (k in p) db.targets[k] = p[k] == null ? null : Math.round(p[k]);
+    if ("weight_target" in p) db.targets.weight_target = p.weight_target == null ? null : Math.round(p.weight_target * 10) / 10;
+    return settingsOut();
+  }
   const unlogged = new Set([4, 11, 12, 19, 25]);
   const noHealth = new Set([6, 12, 19, 23]);
 
@@ -370,6 +386,8 @@ const Mock = (() => {
         if (p.protein_target != null) db.targets.protein_target = p.protein_target;
         return buildDay(today);
       }
+      case "settings": return settingsOut();
+      case "set_settings": { const { op: _o, ...rest } = p; return setSettings(rest); }
       default: throw new ApiError("Неизвестная операция " + op);
     }
   }
@@ -863,7 +881,7 @@ function openSheet(html, onMount) {
 function closeSheet(instant) {
   if (!sheet) return;
   const { bd, sh } = sheet; sheet = null;
-  setBack(null);
+  setBack(settingsOpen ? closeSettings : null);
   if (document.activeElement && sh.contains(document.activeElement)) document.activeElement.blur();
   if (instant) { bd.remove(); sh.remove(); return; }
   bd.classList.remove("on"); sh.classList.remove("on"); sh.style.transform = "";
@@ -1096,6 +1114,10 @@ document.addEventListener("click", async (e) => {
   else if (a === "retry-history") loadHistory();
   else if (a === "item") openItemSheet(el.dataset.id);
   else if (a === "targets") openTargetsSheet();
+  else if (a === "settings") openSettings();
+  else if (a === "settings-back") closeSettings();
+  else if (a === "retry-settings") loadSettings();
+  else if (a === "tz-auto") setTimezoneAuto();
   else if (a === "del-meal") deleteMeal(el.dataset.id);
   else if (a === "del-act") {
     if (busy.has(el.dataset.id)) return;
@@ -1125,6 +1147,7 @@ async function undo(btn) {
 }
 
 function setTab(tab) {
+  if (settingsOpen) closeSettings();
   if (state.tab === tab) return;
   state.tab = tab;
   haptic("select");
@@ -1166,11 +1189,204 @@ qForm.addEventListener("submit", async (e) => {
   qSend.disabled = !qIn.value.trim();
 });
 
+
+/* ================= settings ================= */
+
+const elSettings = $("#settings");
+let settingsOpen = false;
+const set = { data: null, loading: false, error: null, saved: {}, errors: {} };
+const TZ = [
+  "Europe/London", "Europe/Lisbon", "Europe/Paris", "Europe/Berlin", "Europe/Madrid", "Europe/Rome", "Europe/Amsterdam",
+  "Europe/Warsaw", "Europe/Prague", "Europe/Helsinki", "Europe/Kyiv", "Europe/Istanbul", "Europe/Moscow",
+  "Asia/Tbilisi", "Asia/Yerevan", "Asia/Dubai", "Asia/Almaty", "Asia/Tashkent", "Asia/Bangkok", "Asia/Singapore",
+  "Asia/Tokyo", "America/New_York", "America/Chicago", "America/Denver", "America/Los_Angeles", "America/Sao_Paulo",
+];
+const FIELDS = {
+  calorie_target: { label: "Калории", unit: "ккал/день", hint: "от 800 до 6000", min: 800, max: 6000, dec: 0, clearable: false },
+  protein_target: { label: "Белок", unit: "г/день", hint: "от 20 до 400 г", min: 20, max: 400, dec: 0, clearable: false },
+  weight_target: { label: "Целевой вес", unit: "кг", hint: "необязательно, пусто = без цели", min: 30, max: 300, dec: 1, clearable: true },
+};
+
+function tzOffset(tz) {
+  try {
+    const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "shortOffset" }).formatToParts(new Date());
+    const n = (p.find((x) => x.type === "timeZoneName") || {}).value || "";
+    return n.replace("GMT", "UTC") === "UTC" ? "UTC+0" : n.replace("GMT", "UTC");
+  } catch (_) { return ""; }
+}
+function tzCity(tz) { return tz.split("/").pop().replace(/_/g, " "); }
+
+function openSettings() {
+  if (settingsOpen) return;
+  settingsOpen = true;
+  closeSwipe();
+  haptic("light");
+  set.saved = {}; set.errors = {};
+  document.body.classList.add("sub");
+  elToday.hidden = true; elTrends.hidden = true; elSettings.hidden = false;
+  window.scrollTo({ top: 0 });
+  setBack(closeSettings);
+  renderSettings();
+  loadSettings();
+}
+function closeSettings() {
+  if (!settingsOpen) return;
+  if (document.activeElement && elSettings.contains(document.activeElement)) document.activeElement.blur();
+  settingsOpen = false;
+  setBack(null);
+  document.body.classList.remove("sub");
+  elSettings.hidden = true;
+  elToday.hidden = state.tab !== "today";
+  elTrends.hidden = state.tab !== "trends";
+  window.scrollTo({ top: 0 });
+  if (state.tab === "trends") renderTrends();
+}
+
+async function loadSettings() {
+  set.loading = true; set.error = null;
+  renderSettings();
+  try { set.data = await call("settings"); }
+  catch (e) { set.error = e.message || "Ошибка"; }
+  set.loading = false;
+  renderSettings();
+}
+
+async function saveSettings(patch, key) {
+  set.errors[key] = null; set.saved[key] = "saving";
+  paintStatus(key);
+  try {
+    set.data = await call("set_settings", patch);
+    set.saved[key] = "ok";
+    haptic("success");
+    // targets and the day boundary can change what Today/Trends show
+    state.history = null;
+    loadDay(state.day && !state.day.is_today ? state.day.date : null, { animate: false });
+  } catch (e) {
+    set.saved[key] = null; set.errors[key] = e.message || "Ошибка";
+    haptic("error");
+  }
+  renderSettings();
+}
+
+function paintStatus(key) {
+  const el = elSettings.querySelector(`[data-status="${key}"]`);
+  if (!el) return;
+  const err = set.errors[key], st = set.saved[key];
+  el.className = "st" + (err ? " err" : st === "ok" ? " ok" : "");
+  el.textContent = err || (st === "saving" ? "Сохраняю…" : st === "ok" ? "Сохранено" : "");
+}
+
+function renderSettings() {
+  if (!settingsOpen) return;
+  const inTgBack = supports("6.1");
+  const head = `<div class="sub-h">${inTgBack ? "" : `<button class="back" data-action="settings-back" aria-label="Назад">${ICON.left}<span>Назад</span></button>`}<h1>Настройки</h1></div>`;
+  const d = set.data;
+  if (!d) {
+    elSettings.innerHTML = head + (set.error ? errorBlockSettings(set.error) : "") +
+      `<div class="card"><div class="sk" style="height:22px"></div><div class="sk" style="height:22px;margin-top:22px"></div><div class="sk" style="height:22px;margin-top:22px"></div></div><div class="card"><div class="sk" style="height:44px"></div></div>`;
+    return;
+  }
+  const active = document.activeElement && document.activeElement.id;
+  const fieldRow = (k) => {
+    const f = FIELDS[k], v = d[k];
+    return `<div class="srow">
+      <div class="sl"><label for="f_${k}">${f.label}</label><small>${f.hint}</small><div class="st" data-status="${k}" aria-live="polite"></div></div>
+      <div class="sin"><input id="f_${k}" data-field="${k}" type="text" inputmode="${f.dec ? "decimal" : "numeric"}" enterkeyhint="done" value="${v == null ? "" : esc(f.dec ? String(v).replace(".", ",") : v)}" placeholder="${f.clearable ? "нет" : ""}"><span>${f.unit}</span></div>
+    </div>`;
+  };
+  const hours = Array.from({ length: 13 }, (_, h) => `<option value="${h}" ${h === d.day_starts_at_hour ? "selected" : ""}>${String(h).padStart(2, "0")}:00</option>`).join("");
+  const zones = TZ.includes(d.timezone) || !d.timezone ? TZ : [d.timezone, ...TZ];
+  const tzOpts = zones.map((z) => `<option value="${esc(z)}" ${z === d.timezone ? "selected" : ""}>${esc(tzCity(z))}, ${tzOffset(z)}</option>`).join("");
+  const auto = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return null; } })();
+  const h = d.health || {};
+  const last = h.last_upload_at ? new Date(h.last_upload_at) : null;
+  const lastTxt = last ? (toISO(new Date(Date.UTC(last.getFullYear(), last.getMonth(), last.getDate()))) === localToday()
+      ? last.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })
+      : last.toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })) : null;
+
+  elSettings.innerHTML = head + `
+    <div class="group-h">Цели</div>
+    <div class="card list">${fieldRow("calorie_target")}${fieldRow("protein_target")}${fieldRow("weight_target")}</div>
+
+    <div class="group-h">Конец суток</div>
+    <div class="card list">
+      <div class="srow">
+        <div class="sl"><label for="f_hour">Новый день начинается в</label><small>Всё, что записано до этого времени, попадёт во вчерашний день</small><div class="st" data-status="day_starts_at_hour" aria-live="polite"></div></div>
+        <div class="sin"><div class="select"><select id="f_hour" data-setting="day_starts_at_hour">${hours}</select></div></div>
+      </div>
+    </div>
+
+    <div class="group-h">Часовой пояс</div>
+    <div class="card list">
+      <div class="srow">
+        <div class="sl"><label for="f_tz">Пояс</label><small>${esc(d.timezone || "не задан")}</small><div class="st" data-status="timezone" aria-live="polite"></div></div>
+        <div class="sin"><div class="select"><select id="f_tz" data-setting="timezone" aria-label="Часовой пояс">${tzOpts}</select></div></div>
+      </div>
+      ${auto && auto !== d.timezone ? `<button class="srow linkrow" data-action="tz-auto">Определить автоматически<span class="hint">${esc(tzCity(auto))}</span></button>`
+        : `<div class="srow linkrow muted">Совпадает с часовым поясом телефона</div>`}
+    </div>
+
+    <div class="group-h">Apple Здоровье</div>
+    <div class="card list">
+      <div class="srow">
+        <div class="sl"><div class="health"><i class="${h.connected ? "on" : ""}"></i>${h.connected ? "Подключено" : "Не подключено"}</div>${h.connected && lastTxt ? `<small>Последняя отправка ${esc(lastTxt)}</small>` : ""}
+        <small>Токен для приложения Sixpack: отправь боту /health</small></div>
+      </div>
+    </div>
+    <div class="footnote">Шаги и расход берутся из Здоровья. Всё остальное пишется в чате с ботом.</div>`;
+
+  Object.keys(set.saved).concat(Object.keys(set.errors)).forEach(paintStatus);
+  if (active) { const el = document.getElementById(active); if (el) el.focus(); }
+
+  elSettings.querySelectorAll("input[data-field]").forEach((inp) => {
+    const k = inp.dataset.field, f = FIELDS[k];
+    inp.addEventListener("input", () => {
+      inp.value = f.dec ? inp.value.replace(/[^\d.,]/g, "").replace(/([.,].*)[.,]/, "$1").slice(0, 5) : inp.value.replace(/\D/g, "").slice(0, 4);
+      if (set.errors[k] || set.saved[k]) { set.errors[k] = null; set.saved[k] = null; paintStatus(k); }
+    });
+    inp.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); inp.blur(); } });
+    inp.addEventListener("blur", () => commitField(inp, k));
+  });
+  elSettings.querySelectorAll("select[data-setting]").forEach((sel) => {
+    sel.addEventListener("change", () => {
+      const k = sel.dataset.setting;
+      haptic("select");
+      saveSettings({ [k]: k === "day_starts_at_hour" ? Number(sel.value) : sel.value }, k);
+    });
+  });
+}
+
+function commitField(inp, k) {
+  if (!settingsOpen || !set.data) return;
+  const f = FIELDS[k], cur = set.data[k];
+  const raw = inp.value.trim().replace(",", ".");
+  if (raw === "") {
+    if (f.clearable) { if (cur != null) saveSettings({ [k]: null }, k); return; }
+    inp.value = cur == null ? "" : cur; return;
+  }
+  const v = f.dec ? Math.round(parseFloat(raw) * 10) / 10 : parseInt(raw, 10);
+  if (!Number.isFinite(v)) { set.errors[k] = "Нужно число"; paintStatus(k); return; }
+  if (v === cur) return;
+  if (v < f.min || v > f.max) { set.errors[k] = `Допустимо от ${fmt(f.min)} до ${fmt(f.max)} ${f.unit.split("/")[0]}`; haptic("error"); paintStatus(k); return; }
+  saveSettings({ [k]: v }, k);
+}
+
+function setTimezoneAuto() {
+  let tz = null;
+  try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) {}
+  if (!tz) { toast("Не удалось определить часовой пояс", { error: true }); return; }
+  saveSettings({ timezone: tz }, "timezone");
+}
+
+function errorBlockSettings(msg) {
+  return `<div class="error"><div>Не загрузилось<small>${esc(msg)}</small></div><button data-action="retry-settings">Повторить</button></div>`;
+}
+
 /* ================= boot ================= */
 
 let rT = null;
 window.addEventListener("resize", () => { clearTimeout(rT); rT = setTimeout(() => { if (state.tab === "trends" && state.history) renderTrends(); }, 150); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sheet) closeSheet(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") { if (sheet) closeSheet(); else if (settingsOpen) closeSettings(); } });
 
 const style = document.createElement("style");
 style.textContent = "@keyframes grow { from { width: 0 } }";
@@ -1178,3 +1394,4 @@ document.head.append(style);
 
 loadDay(null);
 if (params.get("tab") === "trends") setTab("trends");
+if (params.get("screen") === "settings") openSettings();
