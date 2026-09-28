@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no">
+  <meta name="format-detection" content="telephone=no">
+  <title>Sixpack</title>
+  <link rel="icon" href="data:,">
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="seg" id="seg" data-tab="today" role="tablist">
+      <div class="seg-thumb"></div>
+      <button role="tab" data-action="tab" data-tab="today" aria-selected="true">Сегодня</button>
+      <button role="tab" data-action="tab" data-tab="trends" aria-selected="false">Тренды</button>
+    </div>
+    <button class="icon-btn" id="undoBtn" data-action="undo" aria-label="Отменить последнее действие" title="Отменить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/></svg>
+    </button>
+  </header>
+
+  <main>
+    <section class="view" id="today"></section>
+    <section class="view" id="trends" hidden></section>
+  </main>
+
+  <div class="quick">
+    <form id="quickForm" autocomplete="off">
+      <label class="field">
+        <input id="quickInput" type="text" enterkeyhint="send" placeholder="Что съел?" aria-label="Что съел?">
+        <span class="when" id="quickWhen" hidden></span>
+      </label>
+      <button class="send" id="quickSend" type="submit" aria-label="Записать" disabled>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+      </button>
+    </form>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div id="sheetRoot"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
