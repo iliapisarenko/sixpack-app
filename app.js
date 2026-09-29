@@ -408,6 +408,7 @@ const Mock = (() => {
         return buildDay(today);
       }
       case "settings": return settingsOut();
+      case "request_shortcut": return { message: "Запрос принят. Шорткат придёт в чат в течение дня-двух." };
       case "set_settings": { const { op: _o, ...rest } = p; return setSettings(rest); }
       default: throw new ApiError("Неизвестная операция " + op);
     }
@@ -1162,6 +1163,13 @@ document.addEventListener("click", async (e) => {
   else if (a === "settings-back") closeSettings();
   else if (a === "retry-settings") loadSettings();
   else if (a === "tz-auto") setTimezoneAuto();
+  else if (a === "request-shortcut") {
+    if (busy.has("shortcut")) return;
+    busy.add("shortcut");
+    try { const r = await call("request_shortcut"); haptic("success"); toast(r.message); }
+    catch (err) { haptic("error"); toast(err.message, { error: true }); }
+    finally { busy.delete("shortcut"); }
+  }
   else if (a === "del-meal") deleteMeal(el.dataset.id);
   else if (a === "del-act") {
     if (busy.has(el.dataset.id)) return;
@@ -1376,8 +1384,9 @@ function renderSettings() {
     <div class="card list">
       <div class="srow">
         <div class="sl"><div class="health"><i class="${h.connected ? "on" : ""}"></i>${h.connected ? "Подключено" : "Не подключено"}</div>${h.connected && lastTxt ? `<small>Последняя отправка ${esc(lastTxt)}</small>` : ""}
-        <small>Токен для приложения Sixpack: отправь боту /health</small></div>
+        </div>
       </div>
+      <button class="srow linkrow" data-action="request-shortcut">Прислать шорткат в чат<span class="hint">с личным ключом и инструкцией</span></button>
     </div>
     <div class="footnote">Шаги и расход берутся из Здоровья. Всё остальное пишется в чате с ботом.</div>`;
 
