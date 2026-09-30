@@ -430,3 +430,11 @@ button.tile:active { transform: scale(.99); }
 .gsub.bad { color: var(--over); }
 .gsub.good { color: var(--active); }
 .gsub.link { color: var(--accent); }
+
+/* activity edit sheet */
+.act[data-action="act"] { cursor: pointer; }
+.fields { display: grid; gap: 10px; margin: 14px 0 6px; }
+.qty.wide { width: auto; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px;
+  border-radius: 14px; background: var(--card-2, rgba(127,127,127,.12)); }
+.qty.wide .lbl { flex: 1; text-align: left; font-size: 15px; color: var(--hint, inherit); }
+.qty.wide input { width: 90px; text-align: right; font-size: 22px; font-weight: 600; background: none; border: 0; color: inherit; font-family: inherit; }

@@ -394,6 +394,19 @@ const Mock = (() => {
         }
         throw new ApiError("Активность не найдена");
       }
+      case "set_activity": {
+        for (const [date, d] of Object.entries(db.days)) {
+          const a = d.activities.find((x) => x.id === p.activity_id);
+          if (a) {
+            if (p.kcal != null && (p.kcal < 0 || p.kcal > 5000)) throw new ApiError("Калории: от 0 до 5000");
+            snapshot(`правка «${a.description}»`, date);
+            if (p.kcal != null) a.kcal = p.kcal;
+            if (p.duration_min != null) a.duration_min = p.duration_min;
+            return buildDay(date);
+          }
+        }
+        throw new ApiError("Активность не найдена");
+      }
       case "undo": {
         const s = undoStack.pop();
         if (!s) return { message: "Нечего отменять.", day: buildDay(today) };
@@ -621,7 +634,7 @@ function renderToday() {
   if (acts.length) {
     actsHtml = `<div class="section-h"><h2>Тренировки</h2><span class="num">${fmt(acts.reduce((s, x) => s + (x.kcal || 0), 0))} ккал</span></div>
     <div class="card${rise()}" style="padding:4px 0">${acts.map((x) => `
-      <div class="act">
+      <div class="act" data-action="act" data-id="${esc(x.id)}" role="button" tabindex="0">
         <div class="dot">${ICON.bolt}</div>
         <div class="nm"><div>${esc(cap(x.description))}</div><small class="num">${x.duration_min ? fmt(x.duration_min) + " мин" : ""}</small></div>
         <div class="kc num">${fmt(x.kcal)}</div>
@@ -1014,6 +1027,51 @@ function openItemSheet(id) {
   });
 }
 
+function openActivitySheet(id) {
+  const a = ((state.day && state.day.activities) || []).find((x) => x.id === id);
+  if (!a) return;
+  haptic("light");
+  const field = (idAttr, label, value, unit) => `
+    <label class="qty wide"><span class="lbl">${label}</span><input id="${idAttr}" type="text" inputmode="numeric" pattern="[0-9]*" value="${value == null ? "" : esc(value)}" aria-label="${label}"><span>${unit}</span></label>`;
+  openSheet(`
+    <h3>${esc(cap(a.description))}</h3>
+    <div class="sub">Сожжённые калории сверх покоя. Покой и шаги считаются отдельно.</div>
+    <div class="fields">${field("actKcal", "Калории", a.kcal, "ккал")}${field("actMin", "Длительность", a.duration_min, "мин")}</div>
+    <button class="btn primary" id="saveAct">Сохранить</button>
+    <button class="btn ghost" id="delAct">Удалить тренировку</button>
+  `, (sh) => {
+    const kc = sh.querySelector("#actKcal"), mn = sh.querySelector("#actMin"), save = sh.querySelector("#saveAct");
+    const num = (el) => { const v = el.value.replace(/\D/g, ""); return v === "" ? null : parseInt(v, 10); };
+    const paint = () => {
+      const k = num(kc), m = num(mn);
+      const changed = k !== a.kcal || m !== (a.duration_min ?? null);
+      save.disabled = !changed || k == null || k > 5000 || (m != null && (m < 1 || m > 1440));
+      save.textContent = changed ? "Сохранить" : "Без изменений";
+    };
+    [kc, mn].forEach((el) => {
+      el.addEventListener("input", () => { el.value = el.value.replace(/\D/g, "").slice(0, 4); paint(); });
+      el.addEventListener("focus", () => setTimeout(() => el.select(), 0));
+      el.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); !save.disabled && save.click(); } });
+    });
+    paint();
+    save.addEventListener("click", async () => {
+      save.disabled = true; save.textContent = "Сохраняю…";
+      try {
+        const d = await call("set_activity", { activity_id: a.id, kcal: num(kc), duration_min: num(mn), date: state.day && state.day.date });
+        haptic("success"); closeSheet(); applyDay(d);
+      } catch (e) { haptic("error"); toast(e.message, { error: true }); paint(); }
+    });
+    const del = sh.querySelector("#delAct");
+    del.addEventListener("click", async () => {
+      if (del.disabled) return;
+      del.disabled = true;
+      if (!(await confirmAsk(`Удалить «${a.description}»?`))) { del.disabled = false; return; }
+      try { const d = await call("delete_activity", { activity_id: a.id, date: state.day && state.day.date }); haptic("success"); closeSheet(); applyDay(d); }
+      catch (e) { haptic("error"); toast(e.message, { error: true }); del.disabled = false; }
+    });
+  });
+}
+
 function openTargetsSheet() {
   const t = (state.day && state.day.targets) || {};
   haptic("light");
@@ -1158,6 +1216,7 @@ document.addEventListener("click", async (e) => {
   else if (a === "retry-day") loadDay(state.failedDate !== undefined ? state.failedDate : state.date);
   else if (a === "retry-history") loadHistory();
   else if (a === "item") openItemSheet(el.dataset.id);
+  else if (a === "act") openActivitySheet(el.dataset.id);
   else if (a === "targets") openTargetsSheet();
   else if (a === "settings") openSettings();
   else if (a === "settings-back") closeSettings();
