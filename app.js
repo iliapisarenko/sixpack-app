@@ -1043,7 +1043,7 @@ function openActivitySheet(id) {
     const kc = sh.querySelector("#actKcal"), mn = sh.querySelector("#actMin"), save = sh.querySelector("#saveAct");
     const num = (el) => { const v = el.value.replace(/\D/g, ""); return v === "" ? null : parseInt(v, 10); };
     const paint = () => {
-      const k = num(kc), m = num(mn);
+      const k = num(kc), m = num(mn) ?? (a.duration_min ?? null); // an emptied duration keeps the old one
       const changed = k !== a.kcal || m !== (a.duration_min ?? null);
       save.disabled = !changed || k == null || k > 5000 || (m != null && (m < 1 || m > 1440));
       save.textContent = changed ? "Сохранить" : "Без изменений";
