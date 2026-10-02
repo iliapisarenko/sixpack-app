@@ -667,8 +667,8 @@ function minorMacro(label, value, target) {
 }
 
 function itemRow(it) {
-  const qty = it.units != null && it.unit_name
-    ? `${fmt(it.units, it.units % 1 ? 1 : 0)} ${esc(it.unit_name)}${it.grams ? ` · ${fmt(it.grams)} г` : ""}`
+  const qty = it.units != null
+    ? `${fmt(it.units, it.units % 1 ? 1 : 0)} шт${it.grams ? ` · ${fmt(it.grams)} г` : ""}`
     : it.grams != null ? `${fmt(it.grams)} г` : "";
   return `<button class="item" data-action="item" data-id="${esc(it.id)}">
     <div class="nm"><div>${esc(cap(it.name))}</div><small class="num">${qty}${qty ? " · " : ""}Б ${fmt(it.protein)}</small></div>
