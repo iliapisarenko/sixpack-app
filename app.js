@@ -97,7 +97,6 @@ function shortDate(iso) { return fmtShort.format(parseISO(iso)).replace(".", "")
 function ddmm(iso) { return iso.slice(8, 10) + "." + iso.slice(5, 7); }
 
 const MEAL_LABEL = { breakfast: "Завтрак", lunch: "Обед", dinner: "Ужин", snack: "Перекус" };
-const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
 
 /* ================= API ================= */
 
@@ -383,7 +382,7 @@ const Mock = (() => {
       case "delete_meal": {
         for (const [date, d] of Object.entries(db.days)) {
           const m = d.meals.find((x) => x.id === p.meal_id);
-          if (m) { snapshot(`удаление «${MEAL_LABEL[m.meal_type].toLowerCase()}»`, date); d.meals = d.meals.filter((x) => x !== m); return buildDay(date); }
+          if (m) { snapshot(`удаление «${(MEAL_LABEL[m.meal_type] || "приём пищи").toLowerCase()}»`, date); d.meals = d.meals.filter((x) => x !== m); return buildDay(date); }
         }
         throw new ApiError("Приём пищи не найден");
       }
@@ -609,7 +608,7 @@ function renderToday() {
       <div class="legend" style="margin-top:0"><span>шаги <b class="num">${fmt(h.steps)}</b></span><span>активные <b class="num">${fmt(h.active_kcal)}</b> ккал</span></div></div>`;
   }
 
-  const meals = [...(d.meals || [])].sort((x, y) => MEAL_ORDER.indexOf(x.meal_type) - MEAL_ORDER.indexOf(y.meal_type) || String(x.time).localeCompare(String(y.time)));
+  const meals = d.meals || []; // the server sends them in the order they were eaten
   let mealsHtml = "";
   if (meals.length) {
     mealsHtml = `<div class="section-h"><h2>Еда</h2><span>${meals.length} ${plural(meals.length, "приём", "приёма", "приёмов")}</span></div>`;
@@ -619,7 +618,7 @@ function renderToday() {
         <button class="swipe-del" data-action="del-meal" data-id="${esc(m.id)}" tabindex="-1">Удалить</button>
         <div class="swipe-body">
           <div class="meal-h" data-longpress="meal" data-id="${esc(m.id)}">
-            <span class="name">${MEAL_LABEL[m.meal_type] || esc(m.meal_type)}</span>
+            <span class="name">${MEAL_LABEL[m.meal_type] || "Приём пищи"}</span>
             ${m.time ? `<span class="time num">${esc(m.time)}</span>` : ""}
             <span class="sum num"><b>${fmt(m.kcal)}</b> ккал · ${fmt(m.protein)} б</span>
           </div>
@@ -977,7 +976,7 @@ function openItemSheet(id) {
   haptic("light");
   openSheet(`
     <h3>${esc(cap(it.name))}</h3>
-    <div class="sub">${MEAL_LABEL[m.meal_type] || ""}${m.time ? ", " + esc(m.time) : ""}</div>
+    <div class="sub">${MEAL_LABEL[m.meal_type] || "Приём пищи"}${m.time ? ", " + esc(m.time) : ""}</div>
     ${canEdit ? `
     <div class="stepper">
       <button class="rb" data-step="-10" aria-label="Минус 10 г">−</button>
